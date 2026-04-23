@@ -90,6 +90,11 @@ def _panel(r: ProviderResult) -> Panel:
     return Panel(body, title=_header(r), title_align="left", border_style="dim")
 
 
+def build(results: list[ProviderResult]) -> Group:
+    """Build the renderable for a snapshot. Reused for both one-shot and watch."""
+    return Group(*(_panel(r) for r in results))
+
+
 def render(results: list[ProviderResult], console: Console | None = None) -> None:
     c = console or Console()
-    c.print(Group(*(_panel(r) for r in results)))
+    c.print(build(results))
