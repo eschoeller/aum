@@ -15,7 +15,7 @@ PROVIDERS = {
     "claude": lambda args: claude.fetch(),
     "codex": lambda args: codex.fetch(auto_refresh=args.refresh),
     "copilot": lambda args: copilot.fetch(),
-    "gemini": lambda args: gemini.fetch(),
+    "gemini": lambda args: gemini.fetch(auto_refresh=args.refresh),
 }
 
 # Gemini is opt-in because its two-step orchestration (loadCodeAssist +
@@ -79,7 +79,10 @@ def main() -> int:
     p.add_argument(
         "--refresh",
         action="store_true",
-        help="auto-refresh the Codex access token if expired (rewrites ~/.codex/auth.json)",
+        help=(
+            "auto-refresh expired OAuth tokens for Codex (~/.codex/auth.json) "
+            "and Gemini (~/.gemini/oauth_creds.json)"
+        ),
     )
     p.add_argument(
         "-g",

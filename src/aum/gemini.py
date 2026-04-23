@@ -18,6 +18,8 @@ hit the cap.
 """
 
 import json
+import os
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime
@@ -28,6 +30,12 @@ from .model import ProviderResult, Window
 CREDS_PATH = Path.home() / ".gemini" / "oauth_creds.json"
 ACCOUNTS_PATH = Path.home() / ".gemini" / "google_accounts.json"
 BASE_URL = "https://cloudcode-pa.googleapis.com/v1internal"
+TOKEN_URL = "https://oauth2.googleapis.com/token"
+# These are taken verbatim from Gemini CLI's code_assist/oauth2.ts — the
+# upstream comment notes that for "installed applications" Google does not
+# treat the client secret as confidential, so embedding is expected.
+OAUTH_CLIENT_ID = "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com"
+OAUTH_CLIENT_SECRET = "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"
 # Epoch-zero resetTime signals "not available on this tier" (e.g. Pro models
 # on the free tier). Drop those rather than rendering them as 100% used.
 NOT_AVAILABLE_RESET = "1970-01-01T00:00:00Z"
@@ -63,7 +71,52 @@ def _load_account() -> str | None:
         return None
 
 
-def fetch() -> ProviderResult:
+def _save_creds(creds: dict) -> None:
+    tmp = CREDS_PATH.with_suffix(".json.tmp")
+    with tmp.open("w") as f:
+        json.dump(creds, f, indent=2)
+    os.chmod(tmp, 0o600)
+    tmp.replace(CREDS_PATH)
+
+
+def _refresh_access_token(creds: dict) -> dict:
+    refresh_token = creds.get("refresh_token")
+    if not refresh_token:
+        raise RuntimeError("no refresh_token in oauth_creds.json")
+
+    body = json.dumps(
+        {
+            "client_id": OAUTH_CLIENT_ID,
+            "client_secret": OAUTH_CLIENT_SECRET,
+            "refresh_token": refresh_token,
+            "grant_type": "refresh_token",
+        }
+    ).encode()
+    req = urllib.request.Request(
+        TOKEN_URL,
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        payload = json.loads(resp.read())
+
+    creds["access_token"] = payload["access_token"]
+    creds["token_type"] = payload.get("token_type", creds.get("token_type", "Bearer"))
+    if "id_token" in payload:
+        creds["id_token"] = payload["id_token"]
+    if "scope" in payload:
+        creds["scope"] = payload["scope"]
+    if "refresh_token" in payload:
+        # Google sometimes rotates the refresh token; keep the new one.
+        creds["refresh_token"] = payload["refresh_token"]
+    # Gemini CLI stores expiry_date as unix millis, not seconds.
+    expires_in = int(payload.get("expires_in", 3599))
+    creds["expiry_date"] = int(time.time() * 1000) + expires_in * 1000
+    return creds
+
+
+def fetch(*, auto_refresh: bool = False) -> ProviderResult:
     if not CREDS_PATH.exists():
         return ProviderResult(provider="gemini", error=f"{CREDS_PATH} not found")
 
@@ -76,15 +129,41 @@ def fetch() -> ProviderResult:
     if not access:
         return ProviderResult(provider="gemini", error="no access_token in oauth_creds.json")
 
+    # Proactively refresh if the stored expiry is in the past and the caller
+    # opted in — saves a round trip vs. waiting for the 401.
+    if auto_refresh and isinstance(creds.get("expiry_date"), int):
+        if creds["expiry_date"] < int(time.time() * 1000):
+            try:
+                creds = _refresh_access_token(creds)
+                _save_creds(creds)
+                access = creds["access_token"]
+            except Exception as e:  # noqa: BLE001
+                return ProviderResult(provider="gemini", error=f"token refresh failed: {e}")
+
     try:
         load = _post(f"{BASE_URL}:loadCodeAssist", {"metadata": {"pluginType": "GEMINI"}}, access)
     except urllib.error.HTTPError as e:
-        if e.code == 401:
+        if e.code == 401 and auto_refresh:
+            try:
+                creds = _refresh_access_token(creds)
+                _save_creds(creds)
+                access = creds["access_token"]
+                load = _post(
+                    f"{BASE_URL}:loadCodeAssist",
+                    {"metadata": {"pluginType": "GEMINI"}},
+                    access,
+                )
+            except Exception as e2:  # noqa: BLE001
+                return ProviderResult(provider="gemini", error=f"token refresh failed: {e2}")
+        elif e.code == 401:
             return ProviderResult(
                 provider="gemini",
-                error="access token expired — run `gemini` once to refresh",
+                error="access token expired — run `gemini` once, or pass --refresh",
             )
-        return ProviderResult(provider="gemini", error=f"loadCodeAssist HTTP {e.code}: {e.reason}")
+        else:
+            return ProviderResult(
+                provider="gemini", error=f"loadCodeAssist HTTP {e.code}: {e.reason}"
+            )
     except (urllib.error.URLError, TimeoutError) as e:
         return ProviderResult(provider="gemini", error=f"loadCodeAssist: {e}")
 
