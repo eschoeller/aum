@@ -46,18 +46,28 @@ jq -c --arg captured "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
 mv "${CACHE_FILE}.tmp" "$CACHE_FILE"
 
 # Statusline output — one line, no newline, so Claude renders it inline.
+#
+# Format: "5h: 23% (2h15m) · 7d: 12% (4d3h)"
+#   - percentage is the used portion
+#   - parenthesised value is time until reset
+#   - "(now)" is shown if the reset timestamp has already passed (stale)
 jq -r '
-  .rate_limits as $rl
-  | if ($rl.five_hour // $rl.seven_day) then
-      [
-        (if $rl.five_hour then
-          "5h \($rl.five_hour.used_percentage | floor)%"
-         else empty end),
-        (if $rl.seven_day then
-          "7d \($rl.seven_day.used_percentage | floor)%"
-         else empty end)
-      ] | join(" · ")
+  def fmt_delta(s):
+    if s <= 0 then "now"
+    elif s >= 86400 then "\(s/86400 | floor)d\((s%86400)/3600 | floor)h"
+    elif s >= 3600  then "\(s/3600  | floor)h\((s%3600) /60   | floor)m"
+    else                  "\(s/60    | floor)m"
+    end;
+
+  def fmt_window(tag; w):
+    if w == null then empty
     else
-      empty
-    end
+      "\(tag): \(w.used_percentage | floor)%"
+      + (if w.resets_at then " (\(fmt_delta(w.resets_at - now)))" else "" end)
+    end;
+
+  .rate_limits as $rl
+  | [fmt_window("5h"; $rl.five_hour), fmt_window("7d"; $rl.seven_day)]
+  | map(select(. != null))
+  | join(" · ")
 ' <<<"$input" | tr -d "\n"
