@@ -5,25 +5,55 @@ from pathlib import Path
 from .model import ProviderResult, Window
 
 CACHE_PATH = Path.home() / ".claude" / "last_rate_limits.json"
-# Claude Code persists OAuth account info (email, org, billing type) here.
-# The statusline JSON it pipes to hooks deliberately omits these, so we read
-# them directly at fetch time.
+# ~/.claude.json holds the OAuth account block (email, org).
+# ~/.claude/.credentials.json holds the actual subscription tier.
+# Both are maintained by Claude Code itself; the statusline JSON piped to
+# hooks omits them, so we read them directly at fetch time.
 CLAUDE_JSON = Path.home() / ".claude.json"
+CLAUDE_CREDENTIALS = Path.home() / ".claude" / ".credentials.json"
+
+
+def _format_plan(subscription_type: str | None, rate_limit_tier: str | None) -> str | None:
+    """Combine subscriptionType ('max') + rateLimitTier ('default_claude_max_5x')
+    into a compact label like 'max 5x' or 'max 20x'. Falls back to whichever
+    is available.
+    """
+    # Strip the common prefix and the redundant plan family.
+    tail = None
+    if rate_limit_tier:
+        tail = rate_limit_tier
+        for prefix in ("default_claude_", "claude_"):
+            if tail.startswith(prefix):
+                tail = tail[len(prefix) :]
+                break
+        # "max_5x" -> "5x" when subscriptionType already says "max"
+        if subscription_type and tail.startswith(f"{subscription_type}_"):
+            tail = tail[len(subscription_type) + 1 :]
+
+    if subscription_type and tail:
+        return f"{subscription_type} {tail}"
+    return subscription_type or tail
 
 
 def _load_account() -> tuple[str | None, str | None]:
-    """Return (plan, account_display) from ~/.claude.json, or (None, None)."""
+    """Return (plan, account_display). Either may be None if the relevant file
+    is missing or unreadable."""
+    email = None
     try:
-        data = json.loads(CLAUDE_JSON.read_text())
+        email = (json.loads(CLAUDE_JSON.read_text()).get("oauthAccount") or {}).get(
+            "emailAddress"
+        )
     except (OSError, json.JSONDecodeError):
-        return None, None
+        pass
 
-    oauth = data.get("oauthAccount") or {}
-    email = oauth.get("emailAddress")
-    # No specific plan tier (Pro / Max5 / Max20 etc.) is persisted locally.
-    # Anthropic exposes it only on their account API; not worth a second
-    # endpoint just for a label.
-    return None, email
+    plan = None
+    try:
+        creds = json.loads(CLAUDE_CREDENTIALS.read_text()).get("claudeAiOauth") or {}
+        plan = _format_plan(creds.get("subscriptionType"), creds.get("rateLimitTier"))
+    except (OSError, json.JSONDecodeError):
+        pass
+
+    return plan, email
 
 
 def fetch() -> ProviderResult:
