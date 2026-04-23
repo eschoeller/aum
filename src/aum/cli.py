@@ -34,13 +34,26 @@ def _selected_providers(args) -> list[str]:
 
 
 def _run(args) -> list[ProviderResult]:
+    # Provider fetches run in parallel; rendering is serial. Each fetch is
+    # self-contained — it only touches its own ~/.<provider>/* files, so
+    # running them concurrently is safe. Token-refresh writes go through
+    # atomic temp-file-plus-rename, which also tolerates two aum processes
+    # racing on the same account.
     selected = _selected_providers(args)
     with cf.ThreadPoolExecutor(max_workers=len(selected)) as ex:
         futures = {ex.submit(PROVIDERS[p], args): p for p in selected}
-        results = [
-            f.result() if not f.exception() else ProviderResult(provider=p, error=str(f.exception()))
-            for f, p in futures.items()
-        ]
+        results: list[ProviderResult] = []
+        for f, p in futures.items():
+            exc = f.exception()
+            if exc is None:
+                results.append(f.result())
+            else:
+                # Include the exception class name so generic messages like
+                # KeyError: 'access_token' render as 'KeyError: access_token'
+                # rather than bare "'access_token'".
+                results.append(
+                    ProviderResult(provider=p, error=f"{type(exc).__name__}: {exc}")
+                )
     order = _selected_providers(args)
     results.sort(key=lambda r: order.index(r.provider) if r.provider in order else 99)
     return results
