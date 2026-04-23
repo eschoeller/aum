@@ -8,25 +8,40 @@ from dataclasses import asdict
 from rich.console import Console
 from rich.live import Live
 
-from . import claude, codex, copilot, render
+from . import claude, codex, copilot, gemini, render
 from .model import ProviderResult
 
 PROVIDERS = {
     "claude": lambda args: claude.fetch(),
     "codex": lambda args: codex.fetch(auto_refresh=args.refresh),
     "copilot": lambda args: copilot.fetch(),
+    "gemini": lambda args: gemini.fetch(),
 }
+
+# Gemini is opt-in because its two-step orchestration (loadCodeAssist +
+# retrieveUserQuota) is slower than the other providers, and most free-tier
+# users don't hit the cap. Enabled via -p gemini or --gemini.
+DEFAULT_PROVIDERS = ["claude", "codex", "copilot"]
+
+
+def _selected_providers(args) -> list[str]:
+    if args.provider:
+        return args.provider
+    selected = list(DEFAULT_PROVIDERS)
+    if args.gemini:
+        selected.append("gemini")
+    return selected
 
 
 def _run(args) -> list[ProviderResult]:
-    selected = args.provider or list(PROVIDERS.keys())
+    selected = _selected_providers(args)
     with cf.ThreadPoolExecutor(max_workers=len(selected)) as ex:
         futures = {ex.submit(PROVIDERS[p], args): p for p in selected}
         results = [
             f.result() if not f.exception() else ProviderResult(provider=p, error=str(f.exception()))
             for f, p in futures.items()
         ]
-    order = args.provider or list(PROVIDERS.keys())
+    order = _selected_providers(args)
     results.sort(key=lambda r: order.index(r.provider) if r.provider in order else 99)
     return results
 
@@ -65,6 +80,12 @@ def main() -> int:
         "--refresh",
         action="store_true",
         help="auto-refresh the Codex access token if expired (rewrites ~/.codex/auth.json)",
+    )
+    p.add_argument(
+        "-g",
+        "--gemini",
+        action="store_true",
+        help="also fetch Gemini (opt-in; extra HTTP round-trip to cloudcode-pa)",
     )
     p.add_argument("--json", action="store_true", help="emit JSON instead of rendered panels")
     p.add_argument(

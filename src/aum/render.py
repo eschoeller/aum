@@ -80,8 +80,11 @@ def _panel(r: ProviderResult) -> Panel:
     elif not r.windows:
         body = Text("no windows reported", style="dim")
     else:
+        # Label column auto-sizes to the widest label in this panel so
+        # longer labels (e.g. Gemini's per-model rows) render cleanly.
+        label_width = max((len(w.label) for w in r.windows), default=11)
         table = Table.grid(padding=(0, 2))
-        table.add_column(width=11)
+        table.add_column(width=label_width)
         table.add_column(width=BAR_WIDTH)
         table.add_column()
         for w in r.windows:
