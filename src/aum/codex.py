@@ -110,27 +110,34 @@ def fetch(*, auto_refresh: bool = False) -> ProviderResult:
         return ProviderResult(provider="codex", error=f"{type(e).__name__}: {e}")
 
 
+def _window_label(seconds: int | None, fallback: str) -> str:
+    """Derive a human label from the window duration the API reports.
+    `limit_window_seconds` is the source of truth — don't assume Plus's
+    5h/7d are universal."""
+    if not seconds:
+        return fallback
+    if seconds % 86400 == 0:
+        return f"{seconds // 86400}d window"
+    if seconds % 3600 == 0:
+        return f"{seconds // 3600}h window"
+    if seconds % 60 == 0:
+        return f"{seconds // 60}m window"
+    return f"{seconds}s window"
+
+
 def _parse(data: dict) -> ProviderResult:
     rl = data.get("rate_limit") or {}
     windows = []
 
-    primary = rl.get("primary_window")
-    if primary:
+    for key, fallback in (("primary_window", "primary"), ("secondary_window", "secondary")):
+        block = rl.get(key)
+        if not block:
+            continue
         windows.append(
             Window(
-                label="5h window",
-                used_percent=float(primary.get("used_percent", 0)),
-                resets_at=primary.get("reset_at"),
-            )
-        )
-
-    secondary = rl.get("secondary_window")
-    if secondary:
-        windows.append(
-            Window(
-                label="7d window",
-                used_percent=float(secondary.get("used_percent", 0)),
-                resets_at=secondary.get("reset_at"),
+                label=_window_label(block.get("limit_window_seconds"), fallback),
+                used_percent=float(block.get("used_percent", 0)),
+                resets_at=block.get("reset_at"),
             )
         )
 
