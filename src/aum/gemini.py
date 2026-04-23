@@ -41,6 +41,16 @@ OAUTH_CLIENT_SECRET = "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"
 # on the free tier). Drop those rather than rendering them as 100% used.
 NOT_AVAILABLE_RESET = "1970-01-01T00:00:00Z"
 
+# Narrow tuple covering anything the refresh + save code paths can raise.
+_REFRESH_ERRORS = (
+    urllib.error.URLError,
+    TimeoutError,
+    OSError,
+    json.JSONDecodeError,
+    KeyError,
+    RuntimeError,
+)
+
 
 def _post(url: str, body: dict, access_token: str) -> dict:
     req = urllib.request.Request(
@@ -70,6 +80,19 @@ def _load_account() -> str | None:
         return json.loads(ACCOUNTS_PATH.read_text()).get("active")
     except (OSError, json.JSONDecodeError):
         return None
+
+
+def _is_token_expired(creds: dict) -> bool:
+    """Return True if the cached access token is past its expiry.
+
+    Gemini CLI stores ``expiry_date`` as a unix timestamp in milliseconds
+    (not seconds). Missing or non-integer values are conservatively treated
+    as expired so a refresh gets attempted.
+    """
+    expiry = creds.get("expiry_date")
+    if not isinstance(expiry, int):
+        return True
+    return expiry < int(time.time() * 1000)
 
 
 def _save_creds(creds: dict) -> None:
@@ -135,14 +158,13 @@ def fetch(*, auto_refresh: bool = False) -> ProviderResult:
 
     # Proactively refresh if the stored expiry is in the past and the caller
     # opted in — saves a round trip vs. waiting for the 401.
-    if auto_refresh and isinstance(creds.get("expiry_date"), int):
-        if creds["expiry_date"] < int(time.time() * 1000):
-            try:
-                creds = _refresh_access_token(creds)
-                _save_creds(creds)
-                access = creds["access_token"]
-            except Exception as e:  # noqa: BLE001
-                return ProviderResult(provider="gemini", error=f"token refresh failed: {e}")
+    if auto_refresh and _is_token_expired(creds):
+        try:
+            creds = _refresh_access_token(creds)
+            _save_creds(creds)
+            access = creds["access_token"]
+        except _REFRESH_ERRORS as e:
+            return ProviderResult(provider="gemini", error=f"token refresh failed: {e}")
 
     try:
         load = _post(f"{BASE_URL}:loadCodeAssist", {"metadata": {"pluginType": "GEMINI"}}, access)
@@ -157,7 +179,7 @@ def fetch(*, auto_refresh: bool = False) -> ProviderResult:
                     {"metadata": {"pluginType": "GEMINI"}},
                     access,
                 )
-            except Exception as e2:  # noqa: BLE001
+            except _REFRESH_ERRORS as e2:
                 return ProviderResult(provider="gemini", error=f"token refresh failed: {e2}")
         elif e.code == 401:
             return ProviderResult(

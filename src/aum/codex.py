@@ -1,3 +1,19 @@
+"""OpenAI Codex CLI plan-quota fetcher.
+
+Hits ``chatgpt.com/backend-api/wham/usage`` — the same undocumented
+internal endpoint Codex CLI's ``/status`` command uses — authenticated
+with the access token Codex stashes in ``~/.codex/auth.json`` during
+``codex login``. Returns the two rolling windows OpenAI reports
+(``primary_window`` and ``secondary_window``, currently 5h / 7d on the
+Plus plan) with labels derived from ``limit_window_seconds`` so a
+future plan with different durations renders correctly.
+
+If the access token is expired (~1h lifetime), ``fetch(auto_refresh=True)``
+will POST the refresh token to ``https://auth.openai.com/oauth/token``
+and rewrite ``auth.json`` in place — matching what ``codex`` itself does.
+Without ``auto_refresh``, a 401 is surfaced as a user-facing error.
+"""
+
 import json
 import os
 import urllib.error
@@ -5,6 +21,18 @@ import urllib.request
 from pathlib import Path
 
 from .model import ProviderResult, Window
+
+# Broad-but-named tuple covering anything these HTTP + file-backed code
+# paths can raise. Preferred over `except Exception` so genuinely
+# unexpected bugs (e.g. programming errors) still surface as tracebacks.
+_EXPECTED_ERRORS = (
+    urllib.error.URLError,
+    TimeoutError,
+    OSError,
+    json.JSONDecodeError,
+    KeyError,
+    RuntimeError,
+)
 
 AUTH_PATH = Path.home() / ".codex" / "auth.json"
 USAGE_URL = "https://chatgpt.com/backend-api/wham/usage"
@@ -92,7 +120,6 @@ def fetch(*, auto_refresh: bool = False) -> ProviderResult:
             if e.code == 401 and auto_refresh:
                 auth = _refresh_access_token(auth)
                 _save_auth(auth)
-                access = auth["tokens"]["account_id"]  # noqa: F841  (kept for parity)
                 data = _fetch_usage(
                     auth["tokens"]["access_token"],
                     auth["tokens"]["account_id"],
@@ -106,7 +133,7 @@ def fetch(*, auto_refresh: bool = False) -> ProviderResult:
                 return ProviderResult(provider="codex", error=f"HTTP {e.code}: {e.reason}")
 
         return _parse(data)
-    except Exception as e:  # noqa: BLE001
+    except _EXPECTED_ERRORS as e:
         return ProviderResult(provider="codex", error=f"{type(e).__name__}: {e}")
 
 

@@ -1,3 +1,17 @@
+"""GitHub Copilot plan-quota fetcher — piggybacks on the ``gh`` CLI.
+
+Hits ``/copilot_internal/user`` — an undocumented but stable internal
+endpoint — via ``gh api`` so we inherit whatever OAuth token ``gh auth
+login`` stored in the GNOME Keyring. Works for both individual and
+org-seat accounts (tested against a UCBoulder business seat).
+
+The response exposes ``quota_snapshots`` for each metered quota
+(``premium_interactions``, ``chat``, ``completions``). Quotas flagged
+``unlimited`` are rendered with a 0% bar and the ``(unlimited)`` tag so
+the row is visible but not alarming. Reset is monthly on the 1st UTC,
+different from Claude/Codex's rolling windows.
+"""
+
 import json
 import subprocess
 

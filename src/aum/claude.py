@@ -1,3 +1,19 @@
+"""Claude Code plan-quota fetcher — reads local cache, no network call.
+
+Claude Code pipes a ``rate_limits`` block to the configured statusline
+command on every turn (docs: https://code.claude.com/docs/en/statusline).
+The bundled hook (``hooks/claude-statusline.sh``) snapshots that block to
+``~/.claude/last_rate_limits.json`` whenever it runs.
+
+This module reads that cache, merges in the account email from
+``~/.claude.json`` and the plan tier from ``~/.claude/.credentials.json``
+(both maintained by Claude Code itself), and returns a ``ProviderResult``.
+
+Because the cache is only refreshed on Claude Code turns, stale data is
+possible between sessions. Staleness (seconds since cache write) is
+surfaced on ``ProviderResult.stale_seconds`` so the renderer can flag it.
+"""
+
 import json
 import time
 from pathlib import Path
