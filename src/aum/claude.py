@@ -113,14 +113,19 @@ def fetch() -> ProviderResult:
             )
         )
 
+    # ~/.claude.json and ~/.claude/.credentials.json are maintained by
+    # Claude Code itself and always reflect current state, so they outrank
+    # anything the hook might have snapshotted. The cached values are kept
+    # only as a fallback for the unusual case where the live files are
+    # missing but the hook cache exists.
     cached_plan = data.get("plan")
     cached_account = data.get("account")
     fresh_plan, fresh_account = _load_account()
 
     return ProviderResult(
         provider="claude",
-        plan=cached_plan or fresh_plan,
-        account=cached_account or fresh_account,
+        plan=fresh_plan or cached_plan,
+        account=fresh_account or cached_account,
         windows=windows,
         stale_seconds=stale_seconds,
     )

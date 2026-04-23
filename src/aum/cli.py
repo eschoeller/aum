@@ -27,7 +27,12 @@ DEFAULT_PROVIDERS = ["claude", "codex", "copilot"]
 def _selected_providers(args) -> list[str]:
     # -p sets the base selection (default set otherwise); --gemini is additive
     # in both cases, so `aum -p claude --gemini` fetches claude + gemini.
-    selected = list(args.provider) if args.provider else list(DEFAULT_PROVIDERS)
+    # dict.fromkeys preserves order while collapsing repeats, so
+    # `aum -p codex -p codex` fetches codex once.
+    if args.provider:
+        selected = list(dict.fromkeys(args.provider))
+    else:
+        selected = list(DEFAULT_PROVIDERS)
     if args.gemini and "gemini" not in selected:
         selected.append("gemini")
     return selected
@@ -80,7 +85,10 @@ def _watch_loop(args, console: Console) -> int:
 def main() -> int:
     p = argparse.ArgumentParser(
         prog="aum",
-        description="AI Usage Meter — unified plan quota view for Claude, Codex, Copilot",
+        description=(
+            "AI Usage Meter — unified plan quota view for Claude Code, "
+            "OpenAI Codex, GitHub Copilot, and (opt-in) Google Gemini"
+        ),
     )
     p.add_argument(
         "-p",

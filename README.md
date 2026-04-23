@@ -1,8 +1,8 @@
 # aum
 
-**AI Usage Meter** — unified plan-quota view for Claude Code, OpenAI Codex, and
-GitHub Copilot. Shows real-time rolling-window usage percentages with progress
-bars and reset timers.
+**AI Usage Meter** — unified plan-quota view for Claude Code, OpenAI Codex,
+GitHub Copilot, and (opt-in) Google Gemini. Shows real-time rolling-window
+usage percentages with progress bars and reset timers.
 
 ```
 ┌ codex  plus  you@example.com ─────────────────────────────────────────────┐
@@ -24,12 +24,12 @@ bars and reset timers.
 
 | Provider | Source | Freshness |
 |---|---|---|
-| **Claude Code** | `~/.claude/last_rate_limits.json` — written by the bundled statusline hook on every Claude Code turn (uses the `rate_limits` block Claude Code v1.2.80+ pipes to statusline scripts on stdin) | As of last Claude Code turn |
+| **Claude Code** | `~/.claude/last_rate_limits.json` — written by the bundled statusline hook on every Claude Code turn (uses the `rate_limits` block Claude Code v1.2.80+ pipes to statusline scripts on stdin). Account and plan are resolved live from `~/.claude.json` and `~/.claude/.credentials.json`. | Windows: last Claude Code turn. Account/plan: real-time. |
 | **Codex** | `GET https://chatgpt.com/backend-api/wham/usage` with the access token from `~/.codex/auth.json` | Real-time |
 | **Copilot** | `gh api /copilot_internal/user` — undocumented but stable internal endpoint, uses your existing `gh auth` token | Real-time |
+| **Gemini** (opt-in) | `POST cloudcode-pa.googleapis.com/v1internal:loadCodeAssist` → `:retrieveUserQuota` with the access token from `~/.gemini/oauth_creds.json` | Real-time |
 
-None of these are approximations — all three are the same numbers the provider
-UIs show.
+None of these are approximations — all are the same numbers the provider UIs show.
 
 ## Install
 
@@ -59,19 +59,33 @@ expands `~` in the `command` field.)
 ## Usage
 
 ```bash
-aum                    # show all three providers
-aum -p codex           # one provider (repeatable)
-aum --refresh          # auto-refresh Codex access token if expired
+aum                    # default set: claude, codex, copilot
+aum -g                 # also fetch Gemini (opt-in; adds one HTTP dance)
+aum -p codex           # one provider only; repeat to add more
+aum -p claude -g       # claude + gemini (-g is additive with -p)
+aum --refresh          # auto-refresh expired OAuth tokens (Codex and Gemini)
 aum --json             # machine-readable
+aum -w                 # live watch mode (redraws every second)
+aum -w -n 30           # watch with 30-second refetch cadence
 ```
 
-## Token refresh (Codex)
+## Token refresh
 
-The Codex access token in `~/.codex/auth.json` lasts about an hour. Default
-behavior on expiry: print a hint and exit non-zero for that provider. Passing
-`--refresh` makes aum POST to `https://auth.openai.com/oauth/token` using the
-refresh token and rewrite `auth.json` in place — matching what `codex` itself
-does.
+Codex and Gemini both use short-lived OAuth access tokens (~1h). Default
+behavior on expiry: print a hint and exit non-zero for that provider.
+Passing `--refresh` makes aum:
+
+- For **Codex**, POST the refresh token to `https://auth.openai.com/oauth/token`
+  and rewrite `~/.codex/auth.json`.
+- For **Gemini**, POST the refresh token to `https://oauth2.googleapis.com/token`
+  (form-encoded per RFC 6749) and rewrite `~/.gemini/oauth_creds.json`.
+
+Both operations preserve `0600` file permissions and use atomic
+temp-file-plus-rename so concurrent aum processes don't corrupt auth state.
+
+Copilot doesn't need refresh — `gh api` inherits whatever token `gh auth login`
+stored in your keyring. Claude doesn't need refresh either — the statusline
+hook just caches a local JSON snapshot.
 
 ## Why not just use `ccusage` / `caut` / `claude-monitor`?
 
