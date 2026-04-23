@@ -8,12 +8,12 @@ CACHE_PATH = Path.home() / ".claude" / "last_rate_limits.json"
 
 
 def fetch() -> ProviderResult:
-    if not CACHE_PATH.exists():
+    if not CACHE_PATH.exists() or CACHE_PATH.stat().st_size == 0:
         return ProviderResult(
             provider="claude",
             error=(
-                f"no cache yet at {CACHE_PATH} — install the statusline hook "
-                "and run one Claude Code turn"
+                f"no cache data at {CACHE_PATH} — run a Claude Code turn "
+                "so the statusline hook can populate it"
             ),
         )
 
