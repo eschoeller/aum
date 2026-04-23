@@ -33,6 +33,9 @@ UIs show.
 
 ## Install
 
+Prerequisites: `python >= 3.10`, `pipx`, and `jq` (used by the Claude
+statusline hook). On Debian/Ubuntu: `apt install pipx jq`.
+
 ```bash
 git clone https://github.com/eschoeller/aum.git ~/projects/aum
 pipx install ~/projects/aum            # or: pipx install -e ~/projects/aum for dev

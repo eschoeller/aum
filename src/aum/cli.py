@@ -25,10 +25,10 @@ DEFAULT_PROVIDERS = ["claude", "codex", "copilot"]
 
 
 def _selected_providers(args) -> list[str]:
-    if args.provider:
-        return args.provider
-    selected = list(DEFAULT_PROVIDERS)
-    if args.gemini:
+    # -p sets the base selection (default set otherwise); --gemini is additive
+    # in both cases, so `aum -p claude --gemini` fetches claude + gemini.
+    selected = list(args.provider) if args.provider else list(DEFAULT_PROVIDERS)
+    if args.gemini and "gemini" not in selected:
         selected.append("gemini")
     return selected
 

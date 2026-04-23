@@ -21,6 +21,7 @@ import json
 import os
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime
 from pathlib import Path
@@ -84,7 +85,10 @@ def _refresh_access_token(creds: dict) -> dict:
     if not refresh_token:
         raise RuntimeError("no refresh_token in oauth_creds.json")
 
-    body = json.dumps(
+    # Google's token endpoint documents application/x-www-form-urlencoded for
+    # the refresh_token grant; JSON happens to work but isn't the documented
+    # contract. Use form-encoded per RFC 6749 §3.2 and Google's docs.
+    body = urllib.parse.urlencode(
         {
             "client_id": OAUTH_CLIENT_ID,
             "client_secret": OAUTH_CLIENT_SECRET,
@@ -95,7 +99,7 @@ def _refresh_access_token(creds: dict) -> dict:
     req = urllib.request.Request(
         TOKEN_URL,
         data=body,
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=15) as resp:
