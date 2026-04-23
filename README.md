@@ -63,7 +63,7 @@ aum                    # default set: claude, codex, copilot
 aum -g                 # also fetch Gemini (opt-in; adds one HTTP dance)
 aum -p codex           # one provider only; repeat to add more
 aum -p claude -g       # claude + gemini (-g is additive with -p)
-aum --refresh          # auto-refresh expired OAuth tokens (Codex and Gemini)
+aum --no-refresh       # leave OAuth auth files untouched even if tokens expired
 aum --json             # machine-readable
 aum -w                 # live watch mode (redraws every second)
 aum -w -n 30           # watch with 30-second refetch cadence
@@ -71,9 +71,9 @@ aum -w -n 30           # watch with 30-second refetch cadence
 
 ## Token refresh
 
-Codex and Gemini both use short-lived OAuth access tokens (~1h). Default
-behavior on expiry: print a hint and exit non-zero for that provider.
-Passing `--refresh` makes aum:
+Codex and Gemini both use short-lived OAuth access tokens (~1h). By default
+aum auto-refreshes them when expired — it's what the upstream CLIs do on
+startup, and avoids an ergonomic wall every hour.
 
 - For **Codex**, POST the refresh token to `https://auth.openai.com/oauth/token`
   and rewrite `~/.codex/auth.json`.
@@ -82,6 +82,9 @@ Passing `--refresh` makes aum:
 
 Both operations preserve `0600` file permissions and use atomic
 temp-file-plus-rename so concurrent aum processes don't corrupt auth state.
+
+Pass `--no-refresh` if you'd rather aum never write to those files — aum will
+then just surface a "token expired" error for that provider.
 
 Copilot doesn't need refresh — `gh api` inherits whatever token `gh auth login`
 stored in your keyring. Claude doesn't need refresh either — the statusline

@@ -97,12 +97,18 @@ def main() -> int:
         choices=sorted(PROVIDERS.keys()),
         help="limit to one provider (repeatable); default: all",
     )
+    # Default is to refresh — this matches what codex/gemini themselves do at
+    # startup, and aum's token writes are atomic (temp + rename, 0600). Pass
+    # --no-refresh if you'd rather leave the auth files untouched and see a
+    # "token expired" error instead.
     p.add_argument(
-        "--refresh",
-        action="store_true",
+        "--no-refresh",
+        dest="refresh",
+        action="store_false",
+        default=True,
         help=(
-            "auto-refresh expired OAuth tokens for Codex (~/.codex/auth.json) "
-            "and Gemini (~/.gemini/oauth_creds.json)"
+            "don't auto-refresh expired OAuth tokens for Codex "
+            "(~/.codex/auth.json) or Gemini (~/.gemini/oauth_creds.json)"
         ),
     )
     p.add_argument(
