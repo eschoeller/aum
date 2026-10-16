@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
+from aum.ccusage import _humanize_model, fetch as ccusage_fetch
 from aum.codex import _parse as codex_parse, _window_label
 from aum.copilot import fetch as copilot_fetch
 from aum.gemini import fetch as gemini_fetch
@@ -272,3 +273,78 @@ class TestGeminiParsers:
         assert result.windows[0].label == "2.5-flash"
         # 80% remaining = 20% used
         assert abs(result.windows[0].used_percent - 20.0) < 0.01
+
+
+class TestCcusageParsers:
+    """Test ccusage provider parsing and model name humanization."""
+
+    def test_humanize_model_strips_claude_prefix(self):
+        assert _humanize_model("claude-opus-4-6") == "opus 4.6"
+        assert _humanize_model("claude-fable-5") == "fable 5"
+        assert _humanize_model("claude-fable-5-1") == "fable 5.1"
+        assert _humanize_model("claude-sonnet-4-5-20250929") == "sonnet 4.5"
+        assert _humanize_model("claude-haiku-4-5-20251001") == "haiku 4.5"
+        assert _humanize_model("claude-opus-5-5") == "opus 5.5"
+
+    def test_humanize_model_passthrough(self):
+        assert _humanize_model("big-pickle") == "big pickle"
+        assert _humanize_model("?") == "?"
+
+    def test_fetch_parses_daily_json(self, tmp_path):
+        daily_data = {
+            "daily": [
+                {
+                    "period": "2026-10-15",
+                    "totalCost": 200.0,
+                    "modelBreakdowns": [
+                        {
+                            "modelName": "claude-fable-5",
+                            "cost": 120.0,
+                            "inputTokens": 100,
+                            "outputTokens": 500000,
+                            "cacheCreationTokens": 1000,
+                            "cacheReadTokens": 2000,
+                        },
+                        {
+                            "modelName": "claude-opus-4-6",
+                            "cost": 80.0,
+                            "inputTokens": 50,
+                            "outputTokens": 200000,
+                            "cacheCreationTokens": 500,
+                            "cacheReadTokens": 1000,
+                        },
+                    ],
+                }
+            ]
+        }
+        history_dir = tmp_path / "ccusage-history"
+        history_dir.mkdir()
+        (history_dir / "2026-10-15.daily.json").write_text(json.dumps(daily_data))
+
+        with patch("aum.ccusage.HISTORY_DIR", history_dir):
+            result = ccusage_fetch(period="daily")
+
+        assert result.provider == "ccusage"
+        assert result.error is None
+        assert result.account == "2026-10-15"
+        assert len(result.windows) == 2
+        # Sorted by cost descending
+        assert result.windows[0].label == "fable 5"
+        assert abs(result.windows[0].used_percent - 60.0) < 0.01
+        assert "$120.00" in result.windows[0].extra
+        assert result.windows[1].label == "opus 4.6"
+        assert abs(result.windows[1].used_percent - 40.0) < 0.01
+
+    def test_fetch_missing_directory(self, tmp_path):
+        with patch("aum.ccusage.HISTORY_DIR", tmp_path / "nonexistent"):
+            result = ccusage_fetch()
+        assert result.error is not None
+        assert "not found" in result.error
+
+    def test_fetch_no_files(self, tmp_path):
+        empty = tmp_path / "ccusage-history"
+        empty.mkdir()
+        with patch("aum.ccusage.HISTORY_DIR", empty):
+            result = ccusage_fetch()
+        assert result.error is not None
+        assert "no daily data files" in result.error

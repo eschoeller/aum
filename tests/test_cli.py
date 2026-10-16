@@ -13,9 +13,10 @@ class TestSelectedProviders:
     class Args:
         """Mock argparse.Namespace for testing."""
 
-        def __init__(self, provider=None, gemini=False):
+        def __init__(self, provider=None, gemini=False, ccusage=False):
             self.provider = provider
             self.gemini = gemini
+            self.ccusage = ccusage
 
     def test_default_providers_no_gemini(self):
         """Default should select claude, codex, copilot (no gemini)."""
@@ -103,9 +104,10 @@ class TestProviderOrdering:
     class Args:
         """Mock argparse.Namespace."""
 
-        def __init__(self, provider=None, gemini=False):
+        def __init__(self, provider=None, gemini=False, ccusage=False):
             self.provider = provider
             self.gemini = gemini
+            self.ccusage = ccusage
 
     def test_providers_in_requested_order(self):
         """Selected providers should match the order they were requested."""

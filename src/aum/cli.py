@@ -8,7 +8,7 @@ from dataclasses import asdict
 from rich.console import Console
 from rich.live import Live
 
-from . import claude, codex, copilot, gemini, render
+from . import ccusage, claude, codex, copilot, gemini, render
 from .model import ProviderResult
 
 PROVIDERS = {
@@ -16,11 +16,12 @@ PROVIDERS = {
     "codex": lambda args: codex.fetch(auto_refresh=args.refresh),
     "copilot": lambda args: copilot.fetch(),
     "gemini": lambda args: gemini.fetch(auto_refresh=args.refresh),
+    "ccusage": lambda args: ccusage.fetch(period=args.period, model_filter=args.model),
 }
 
-# Gemini is opt-in because its two-step orchestration (loadCodeAssist +
-# retrieveUserQuota) is slower than the other providers, and most free-tier
-# users don't hit the cap. Enabled via -p gemini or --gemini.
+# Gemini and ccusage are opt-in. Gemini's two-step orchestration is slower
+# than other providers. ccusage reads local files (fast) but requires the
+# ccusage CLI to have generated history data. Enabled via -p or shortcut flags.
 DEFAULT_PROVIDERS = ["claude", "codex", "copilot"]
 
 
@@ -35,6 +36,8 @@ def _selected_providers(args) -> list[str]:
         selected = list(DEFAULT_PROVIDERS)
     if args.gemini and "gemini" not in selected:
         selected.append("gemini")
+    if args.ccusage and "ccusage" not in selected:
+        selected.append("ccusage")
     return selected
 
 
@@ -116,6 +119,23 @@ def main() -> int:
         "--gemini",
         action="store_true",
         help="also fetch Gemini (opt-in; extra HTTP round-trip to cloudcode-pa)",
+    )
+    p.add_argument(
+        "-c",
+        "--ccusage",
+        action="store_true",
+        help="also show per-model usage from ccusage history (~/.claude/ccusage-history/)",
+    )
+    p.add_argument(
+        "--period",
+        choices=("daily", "weekly", "monthly"),
+        default="daily",
+        help="ccusage aggregation period (default: daily)",
+    )
+    p.add_argument(
+        "--model",
+        metavar="NAME",
+        help="filter ccusage to models matching NAME (e.g. fable, opus)",
     )
     p.add_argument("--json", action="store_true", help="emit JSON instead of rendered panels")
     p.add_argument(
