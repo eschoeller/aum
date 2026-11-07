@@ -14,19 +14,16 @@ PlasmoidItem {
         currentLanguage: Plasmoid.configuration.language || "system"
     }
 
-    property real sessionUsagePercent: 0
     property real weeklyUsagePercent: 0
     property real sonnetWeeklyPercent: 0
     property real opusWeeklyPercent: 0
     property real fableWeeklyPercent: 0
     property string lastUpdate: ""
     property string planName: ""
-    property string sessionReset: ""
     property string weeklyReset: ""
     property string errorMsg: ""
     property string accessToken: ""
     property bool isLoading: false
-    property var sessionResetTime: null
     property var weeklyResetTime: null
 
     readonly property string usageApiUrl: "https://api.anthropic.com/api/oauth/usage"
@@ -104,7 +101,6 @@ PlasmoidItem {
                         // Parse the limits array (current API) with
                         // fallback to top-level keys (legacy API).
                         var limits = data.limits || []
-                        root.sessionUsagePercent = 0
                         root.weeklyUsagePercent = 0
                         root.sonnetWeeklyPercent = 0
                         root.opusWeeklyPercent = 0
@@ -114,9 +110,7 @@ PlasmoidItem {
                             for (var i = 0; i < limits.length; i++) {
                                 var lim = limits[i]
                                 var pct = lim.percent || 0
-                                if (lim.kind === "session") {
-                                    root.sessionUsagePercent = pct
-                                } else if (lim.kind === "weekly_all") {
+                                if (lim.kind === "weekly_all") {
                                     root.weeklyUsagePercent = pct
                                 } else if (lim.kind === "weekly_scoped" && lim.scope && lim.scope.model) {
                                     var modelName = (lim.scope.model.display_name || "").toLowerCase()
@@ -126,29 +120,19 @@ PlasmoidItem {
                                 }
                             }
                         } else {
-                            var fiveHour = data.five_hour || {}
                             var sevenDay = data.seven_day || {}
-                            root.sessionUsagePercent = fiveHour.utilization || 0
                             root.weeklyUsagePercent = sevenDay.utilization || 0
                         }
 
                         if (limits.length > 0) {
                             for (var j = 0; j < limits.length; j++) {
-                                if (limits[j].kind === "session" && limits[j].resets_at) {
-                                    root.sessionResetTime = new Date(limits[j].resets_at)
-                                    root.sessionReset = Qt.formatTime(root.sessionResetTime, "hh:mm")
-                                } else if (limits[j].kind === "weekly_all" && limits[j].resets_at) {
+                                if (limits[j].kind === "weekly_all" && limits[j].resets_at) {
                                     root.weeklyResetTime = new Date(limits[j].resets_at)
                                     root.weeklyReset = Qt.formatDateTime(root.weeklyResetTime, "MMM d, hh:mm")
                                 }
                             }
                         } else {
-                            var fiveHour = data.five_hour || {}
                             var sevenDay = data.seven_day || {}
-                            if (fiveHour.resets_at) {
-                                root.sessionResetTime = new Date(fiveHour.resets_at)
-                                root.sessionReset = Qt.formatTime(root.sessionResetTime, "hh:mm")
-                            }
                             if (sevenDay.resets_at) {
                                 root.weeklyResetTime = new Date(sevenDay.resets_at)
                                 root.weeklyReset = Qt.formatDateTime(root.weeklyResetTime, "MMM d, hh:mm")
@@ -158,7 +142,7 @@ PlasmoidItem {
                         root.lastUpdate = Qt.formatTime(new Date(), "hh:mm:ss")
                         root.errorMsg = ""
 
-                        console.log("Claude Usage: API success - session:", root.sessionUsagePercent, "weekly:", root.weeklyUsagePercent, "fable:", root.fableWeeklyPercent, "limits_count:", limits.length)
+                        console.log("Claude Usage: API success - weekly:", root.weeklyUsagePercent, "fable:", root.fableWeeklyPercent, "limits_count:", limits.length)
                     } catch (e) {
                         console.log("Claude Usage: JSON parse error:", e)
                         root.errorMsg = "Parse error"
@@ -204,29 +188,7 @@ PlasmoidItem {
                 color: Kirigami.Theme.negativeTextColor
             }
 
-            // Normal state
-            Rectangle {
-                visible: root.errorMsg === ""
-                Layout.preferredWidth: 10
-                Layout.preferredHeight: 10
-                radius: 5
-                color: getUsageColor(root.sessionUsagePercent)
-            }
-
-            PlasmaComponents.Label {
-                visible: root.errorMsg === ""
-                text: Math.round(root.sessionUsagePercent) + "%"
-                font.pixelSize: Kirigami.Theme.defaultFont.pixelSize
-                font.bold: true
-            }
-
-            PlasmaComponents.Label {
-                visible: root.errorMsg === ""
-                text: "|"
-                opacity: 0.5
-                font.pixelSize: Kirigami.Theme.defaultFont.pixelSize
-            }
-
+            // Weekly overall
             Rectangle {
                 visible: root.errorMsg === ""
                 Layout.preferredWidth: 10
@@ -242,6 +204,7 @@ PlasmoidItem {
                 font.bold: true
             }
 
+            // Fable scoped
             PlasmaComponents.Label {
                 visible: root.errorMsg === "" && root.fableWeeklyPercent > 0
                 text: "|"
@@ -342,48 +305,6 @@ PlasmoidItem {
                 height: 1
                 color: Kirigami.Theme.disabledTextColor
                 opacity: 0.3
-            }
-
-            // Session Usage
-            ColumnLayout {
-                Layout.fillWidth: true
-                spacing: Kirigami.Units.smallSpacing
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    PlasmaComponents.Label {
-                        text: i18n.tr("Session (5hr)")
-                        font.bold: true
-                    }
-                    Item { Layout.fillWidth: true }
-                    PlasmaComponents.Label {
-                        text: root.sessionUsagePercent.toFixed(1) + "%"
-                        color: getUsageColor(root.sessionUsagePercent)
-                        font.bold: true
-                    }
-                }
-
-                Rectangle {
-                    Layout.fillWidth: true
-                    height: 10
-                    radius: 5
-                    color: Kirigami.Theme.backgroundColor
-                    border.color: Kirigami.Theme.disabledTextColor
-                    border.width: 1
-                    Rectangle {
-                        width: parent.width * Math.min(root.sessionUsagePercent / 100, 1)
-                        height: parent.height
-                        radius: 5
-                        color: getUsageColor(root.sessionUsagePercent)
-                    }
-                }
-
-                PlasmaComponents.Label {
-                    visible: root.sessionReset !== ""
-                    text: i18n.tr("Resets at:") + " " + root.sessionReset + (root.sessionResetTime ? " (" + formatTimeRemaining(root.sessionResetTime) + ")" : "")
-                    font.pixelSize: Kirigami.Theme.smallFont.pixelSize
-                    color: Kirigami.Theme.disabledTextColor
-                }
             }
 
             // Weekly Usage
@@ -610,5 +531,5 @@ PlasmoidItem {
 
     Plasmoid.icon: "claude-usage"
     toolTipMainText: i18n.tr("Claude Usage")
-    toolTipSubText: i18n.tr("Session (5hr)") + ": " + Math.round(root.sessionUsagePercent) + "% | " + i18n.tr("Weekly (7day)") + ": " + Math.round(root.weeklyUsagePercent) + "%"
+    toolTipSubText: i18n.tr("Weekly (7day)") + ": " + Math.round(root.weeklyUsagePercent) + "%" + (root.fableWeeklyPercent > 0 ? " | " + i18n.tr("Fable") + ": " + Math.round(root.fableWeeklyPercent) + "%" : "")
 }
